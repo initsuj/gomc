@@ -31,7 +31,15 @@ func (a AuthError) Error() string {
 }
 
 func Authenticate(acct *Account, pwd string) error {
-	l := login{
+	l := struct {
+		Agent struct {
+			Name    string `json:"name"`
+			Version int    `json:"version"`
+		} `json:"agent"`
+		Username string `json:"username"`
+		Secret   string `json:"password"`
+		ClientID string `json:"clientToken,omitempty"`
+	}{
 		Agent: struct {
 			Name    string `json:"name"`
 			Version int    `json:"version"`
@@ -43,7 +51,7 @@ func Authenticate(acct *Account, pwd string) error {
 		Secret:   pwd,
 		ClientID: acct.ClientToken,
 	}
-	//l := newMinecraftLogin(acct.Login, pwd, acct.ClientToken)
+
 	body, err := json.MarshalIndent(l, "", "    ")
 	if err != nil {
 		return err
@@ -121,7 +129,69 @@ func Validate(acct Account) (bool, error) {
 	} else {
 		return false, errors.New(resp.Status)
 	}
-	
+
+}
+
+func Refresh(acct *Account) error {
+	t := struct {
+		AccessToken     string `json:"accessToken"`
+		ClientToken     string `json:"clientToken"`
+		SelectedProfile struct {
+			Id         string `json:"id"`
+			PlayerName string `json:"name"`
+		}
+	}{
+		AccessToken: acct.AccessToken,
+		ClientToken: acct.ClientToken,
+		SelectedProfile: struct {
+			Id         string `json:"id"`
+			PlayerName string `json:"name"`
+		}{
+			Id:         acct.Profile.Id,
+			PlayerName: acct.Profile.PlayerName,
+		},
+	}
+
+	body, err := json.MarshalIndent(t, "", "    ")
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", "https://authserver.mojang.com/refresh", bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		var a Account
+		if json.Unmarshal(body, a) != nil {
+			return err
+		}
+
+		acct.AccessToken = a.AccessToken
+
+		return nil
+	} else {
+		var authErr AuthError
+		if json.Unmarshal(body, &authErr) != nil {
+			return err
+		}
+
+		return authErr
+	}
+
 }
 
 // newUUID generates a random UUID

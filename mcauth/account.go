@@ -14,6 +14,6 @@ type Account struct {
 	ClientToken   string `json:"clientToken"`
 	Authenticated bool   `json:"-" sql:"-"`
 
-	AvailableProfiles []Profile `json:"availableProfiles" sql:"-"`
-	Profile   `json:"selectedProfile" sql:"profile"`
+	AvailableProfiles []Profile `json:"availableProfiles,omitempty"`
+	Profile   `json:"selectedProfile" `
 }
