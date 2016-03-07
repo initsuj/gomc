@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"github.com/initsuj/gomc/mcauth/mcrequest"
 )
 
 var (
@@ -30,7 +30,20 @@ func (a AuthError) Error() string {
 	return fmt.Sprintf("%v (%v) %v", a.Type, a.Message, a.Cause)
 }
 
-func Login(l mcrequest.Login, acct *Account) error {
+func Authenticate(acct *Account, pwd string) error {
+	l := login{
+		Agent: struct {
+			Name    string `json:"name"`
+			Version int    `json:"version"`
+		}{
+			Name:    "Minecraft",
+			Version: 1,
+		},
+		Username: acct.Login,
+		Secret:   pwd,
+		ClientID: acct.ClientToken,
+	}
+	//l := newMinecraftLogin(acct.Login, pwd, acct.ClientToken)
 	body, err := json.MarshalIndent(l, "", "    ")
 	if err != nil {
 		return err
@@ -68,6 +81,47 @@ func Login(l mcrequest.Login, acct *Account) error {
 		return authErr
 	}
 
+}
+
+func Validate(acct Account) (bool, error) {
+	t := struct {
+		AccessToken string `json:"accessToken"`
+		ClientToken string `json:"clientToken"`
+	}{
+		AccessToken: acct.AccessToken,
+		ClientToken: acct.ClientToken,
+	}
+
+	body, err := json.MarshalIndent(t, "", "    ")
+	if err != nil {
+		return false, err
+	}
+	req, err := http.NewRequest("POST", "https://authserver.mojang.com/validate", bytes.NewBuffer(body))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	body, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+
+	if resp.StatusCode == http.StatusNoContent {
+		return true, nil
+	} else if resp.StatusCode == http.StatusForbidden {
+		return false, nil
+	} else {
+		return false, errors.New(resp.Status)
+	}
+	
 }
 
 // newUUID generates a random UUID
