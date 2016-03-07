@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -21,10 +20,14 @@ func init() {
 	header.Set("Content-Type", "application/json")
 }
 
-type authError struct {
-	Error   string `json:"error"`
+type AuthError struct {
+	Type    string `json:"error"`
 	Message string `json:"errorMessage"`
 	Cause   string `json:"cause, omitempty"`
+}
+
+func (a AuthError) Error() string {
+	return fmt.Sprintf("%v (%v) %v", a.Type, a.Message, a.Cause)
 }
 
 func Login(l mcrequest.Login, acct *Account) error {
@@ -49,7 +52,6 @@ func Login(l mcrequest.Login, acct *Account) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(body[:]))
 
 	if resp.StatusCode == http.StatusOK {
 		if json.Unmarshal(body, acct) != nil {
@@ -58,12 +60,12 @@ func Login(l mcrequest.Login, acct *Account) error {
 
 		return nil
 	} else {
-		var authErr authError
+		var authErr AuthError
 		if json.Unmarshal(body, &authErr) != nil {
 			return err
 		}
 
-		return errors.New(authErr.Message)
+		return authErr
 	}
 
 }
