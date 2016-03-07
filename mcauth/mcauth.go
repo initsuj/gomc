@@ -63,8 +63,7 @@ func Login(l mcrequest.Login, acct *Account) error {
 			return err
 		}
 
-		fmt.Println("Error: %v, Message: %v, Cause: %v", authErr.Error, authErr.Message, authErr.Cause)
-		return errors.New(authErr.Error)
+		return errors.New(authErr.Message)
 	}
 
 }
