@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	bin "github.com/initsuj/binary"
-	"io"
+	"github.com/initsuj/gomc/protocol"
 	"net"
 	"strconv"
 )
@@ -14,12 +13,22 @@ const (
 	DefaultPort uint16 = 25565
 )
 
-type Handshake struct {
-	Id    int32 `bin:"varint"`
-	Proto int32 `bin:"varint"`
-	Addr  string
-	Port  uint16
-	Next  int32 `bin:"varint"`
+type StatusResponse struct {
+	Response string
+}
+
+type Status struct {
+	Desc struct {
+		Text string `json:"text"`
+	} `json:"description"`
+	Players struct {
+		Max    int `json:"max"`
+		Online int `json:"online"`
+	} `json:"players"`
+	Version struct {
+		Name     string `json:"name"`
+		Protocol int    `json:"protocol"`
+	} `json:"version"`
 }
 
 func GetServerInfo(server string) error {
@@ -37,57 +46,88 @@ func GetServerInfo(server string) error {
 		port = uint16(i)
 	}
 
-	h := &Handshake{
-		Id:    0,
-		Proto: 4,
-		Addr:  s,
-		Port:  port,
-		Next:  1,
+	addr, err := net.ResolveTCPAddr("tcp", server)
+	if err != nil {
+		return err
 	}
 
-	pkt, err := bin.Marshal(h)
+	h := protocol.NewStatusHandshakePkt(s, port)
+
+	fmt.Printf("pkt: %v\n", h)
+
+	pkt, err := h.MarshalBinary()
 	if err != nil {
 		return err
 	}
 
 	var buf bytes.Buffer
-	buf.Write(varint2b(uint64(len(pkt))))
 	buf.Write(pkt)
-	fmt.Printf("sent pkt(%v) %v\n", varint2b(uint64(len(pkt))), h)
 
-	c, err := net.Dial("tcp", server)
+	c, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
 		return err
 	}
 
 	defer c.Close()
-	fmt.Printf("listening: %v\n", c.LocalAddr().String())
 
-	fmt.Printf("sent: %02x", buf.Bytes())
-	//buf.WriteTo(os.Stdout)
+	fmt.Printf("sent: %02x\n", buf.Bytes())
 	buf.WriteTo(c)
 
 	buf.Reset()
 
-	ping := varint2b(0)
-	buf.Write(varint2b(uint64(len(ping))))
-	buf.Write(pkt)
+	ping := protocol.NewEmptyRequest()
+	pkt, err = ping.MarshalBinary()
+	if err != nil {
+		return err
+	}
 
+	buf.Write(pkt)
+	fmt.Printf("sent: %02x\n", buf.Bytes())
 	buf.WriteTo(c)
 
-	var b bytes.Buffer
-	io.Copy(&b, c)
-	fmt.Println("total size:", b.Len())
+	buf.ReadFrom(c)
+
+	fmt.Printf("received: %x\n", buf.Bytes())
+
+	response := protocol.NewStatusResponse()
+	err = response.UnmarshalBinary(&buf)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("response: %v\n", response.Id)
+
+	/*
+		id, n := binary.Uvarint(buf.Bytes())
+		if n < 0 {
+			return errors.New("Error getting packet length!")
+		}
+	*/
+
+	//fmt.Printf("id(%v) ", id)
+
+	/*
+		if err := bin.NewDecoder(c).Decode(&response); err != nil {
+			return err
+		}
+
+		fmt.Printf("received: %v\n", response.Response)
+
+		var status Status
+		if err := json.Unmarshal([]byte(response.Response), &status); err != nil {
+			return err
+		}
+
+		fmt.Printf("received: %v\n", status.Desc.Text)
+	*/
 
 	return nil
 
 }
 
 func varint2b(x uint64) []byte {
-	fmt.Printf("received %v\n", x)
 	b := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutUvarint(b, x)
-	fmt.Printf("created %v : %v\n", n, b[:n])
 	return b[:n]
 }
 
